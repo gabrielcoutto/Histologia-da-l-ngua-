@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Língua Histológica 3D</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#0b0712;color:#f5efff;overflow:hidden}
+.app{display:flex;height:100vh;width:100vw;flex-direction:column}
+.sidebar{width:100%;height:35vh;background:#140d20;border-bottom:1px solid #3b2850;padding:15px;overflow-y:auto;z-index:2}
+.brand{font-size:11px;letter-spacing:2px;color:#c9a9e9;font-weight:bold}
+h1{font-size:18px;margin:4px 0}
+.subtitle{font-size:12px;color:#b7a9c3;margin-bottom:10px}
+button{border:0;border-radius:8px;padding:8px 10px;background:#30203e;color:white;cursor:pointer;font-weight:bold;font-size:12px}
+button:hover{background:#452d59}
+.topbuttons{display:flex;gap:8px;margin-bottom:12px}
+.topbuttons button{flex:1}
+.section-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#a995b4;margin:10px 0 6px}
+#structureList{display:flex;flex-direction:column;gap:5px}
+.structure-btn{text-align:left;background:#21142d;border:1px solid #38254a;padding:8px;border-radius:6px;color:#e2d4ec;cursor:pointer}
+.structure-btn.active{background:#6b3f82;border-color:#9d69b7}
+.viewer{position:relative;width:100%;height:65vh;background:radial-gradient(circle at 50% 45%,#291b35 0,#0c0812 65%)}
+#canvas{width:100%;height:100%;display:block;touch-action:none}
+.loading{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#d9cbe2;background:#1c1226;padding:12px 16px;border-radius:10px;z-index:3;pointer-events:none;font-size:13px}
+.info{position:absolute;right:12px;bottom:12px;width:calc(100% - 24px);background:rgba(20,13,32,.95);border:1px solid #5a3b6e;border-radius:12px;padding:14px;display:none;z-index:4;box-shadow:0 10px 30px #0008}
+.info.show{display:block}
+.info h2{margin:0 0 5px;font-size:16px}
+.info p{margin:0;color:#d7cddd;line-height:1.4;font-size:13px}
+.badge{display:inline-block;background:#3b2550;color:#dcbcf0;border-radius:20px;padding:3px 8px;font-size:10px;margin-bottom:6px}
+.microscope{position:absolute;inset:0;background:rgba(6,4,9,.97);display:none;z-index:10;padding:20px}
+.microscope.show{display:block}
+.micro-content{max-width:950px;margin:auto;height:100%;display:flex;flex-direction:column}
+.micro-head{display:flex;justify-content:space-between;align-items:center}
+.micro-head h2{margin:0;font-size:16px}
+.micro-slide{flex:1;margin-top:12px;border:1px solid #493456;border-radius:12px;position:relative;overflow:hidden;background:radial-gradient(circle,#754f73 0,#2b1834 48%,#100913 100%)}
+.layer{position:absolute;border-radius:50%;opacity:.72}
+.layer.one{width:65%;height:38%;left:17%;top:42%;background:#d19abb}
+.layer.two{width:50%;height:24%;left:25%;top:48%;background:#9b638d}
+.layer.three{width:7%;height:7%;left:36%;top:53%;background:#f2c6e2;box-shadow:120px 15px 0 #f2c6e2,240px -5px 0 #f2c6e2,330px 20px 0 #f2c6e2}
+.micro-label{position:absolute;left:15px;bottom:15px;background:#170d20dd;padding:10px 12px;border-radius:8px;max-width:90%;font-size:12px;line-height:1.35}
+
+@media(min-width:768px){
+  .app{flex-direction:row}
+  .sidebar{width:310px;height:100vh;border-bottom:0;border-right:1px solid #3b2850;padding:22px}
+  .viewer{height:100vh;flex:1}
+  h1{font-size:25px}
+  .info{right:24px;bottom:24px;width:380px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">ATLAS INTERATIVO</div>
+    <h1>Língua Histológica 3D</h1>
+    <div class="subtitle">Histologia Bucal • modelo didático interativo</div>
+    <div class="topbuttons">
+      <button id="resetBtn">↻ Recentrar</button>
+      <button id="microBtn">🔬 Microscópio</button>
+    </div>
+    <div class="section-title">Estruturas histológicas</div>
+    <div id="structureList"></div>
+  </aside>
+  <main class="viewer">
+    <canvas id="canvas"></canvas>
+    <div class="loading" id="loading">Carregando modelo 3D...</div>
+    <div class="info" id="info">
+      <div class="badge" id="infoBadge">HISTOLOGIA</div>
+      <h2 id="infoTitle"></h2>
+      <p id="infoText"></p>
+    </div>
+    <div class="microscope" id="microscope">
+      <div class="micro-content">
+        <div class="micro-head">
+          <h2>🔬 Visão microscópica esquemática</h2>
+          <button id="closeMicro">Fechar</button>
+        </div>
+        <div class="micro-slide">
+          <div class="layer one"></div>
+          <div class="layer two"></div>
+          <div class="layer three"></div>
+          <div class="micro-label">
+            <b>Secção histológica esquemática</b><br>
+            O epitélio pavimentoso estratificado reveste a superfície. Abaixo dele fica a lâmina própria, seguida por feixes de músculo estriado esquelético.
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+const container = document.querySelector('.viewer');
+const canvas = document.getElementById("canvas");
+const loading = document.getElementById("loading");
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0712);
+
+const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+camera.position.set(0, 6, 12);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.minDistance = 4;
+controls.maxDistance = 25;
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.3));
+const light1 = new THREE.DirectionalLight(0xffffff, 1.6);
+light1.position.set(5, 10, 7);
+scene.add(light1);
+
+const root = new THREE.Group();
+scene.add(root);
+
+const structures = {
+  epitelio: { nome: "Epitélio pavimentoso estratificado", tipo: "Revestimento", texto: "Reveste a superfície da língua. É formado por várias camadas de células e apresenta proteção contra atrito." },
+  lamina: { nome: "Lâmina própria", tipo: "Tecido conjuntivo", texto: "Fica logo abaixo do epitélio. Dá suporte, nutrição e sustentação aos tecidos superficiais." },
+  musculo: { nome: "Músculo estriado esquelético", tipo: "Músculo", texto: "Forma grande parte do corpo da língua com feixes dispostos em várias direções." },
+  filiforme: { nome: "Papilas filiformes", tipo: "Papila lingual", texto: "Numerosas e de formato cônico. Função mecânica (não possuem botões gustativos)." },
+  fungiforme: { nome: "Papilas fungiformes", tipo: "Papila lingual", texto: "Formato de cogumelo. Ficam dispersas e contêm botões gustativos." },
+  circunvalada: { nome: "Papilas circunvaladas", tipo: "Papila lingual", texto: "Grandes papilas posteriores organizadas em V lingual, cheias de botões gustativos nas paredes." },
+  botao: { nome: "Botão gustativo", tipo: "Estrutura sensorial", texto: "Conjunto de células receptoras responsáveis pela percepção dos sabores." },
+  vonEbner: { nome: "Glândulas de Von Ebner", tipo: "Glândula serosa", texto: "Secreção serosa que limpa os sulcos das papilas circunvaladas." }
+};
+
+function mat(c) { return new THREE.MeshStandardMaterial({ color: c, roughness: 0.5 }); }
+function add(o, id) { o.userData.structure = id; root.add(o); return o; }
+
+const musc = new THREE.Mesh(new THREE.BoxGeometry(6, 2, 8), mat(0x9b405f));
+musc.position.y = -1;
+add(musc, "musculo");
+
+const lam = new THREE.Mesh(new THREE.BoxGeometry(6.1, 0.4, 8.1), mat(0xd18aa8));
+lam.position.y = 0.2;
+add(lam, "lamina");
+
+const epi = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.2, 8.2), mat(0xf0b8ce));
+epi.position.y = 0.5;
+add(epi, "epitelio");
+
+for(let z = -3; z <= 2; z += 0.8) {
+  for(let x = -2.5; x <= 2.5; x += 0.8) {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 8), mat(0xf4c4d6));
+    cone.position.set(x, 0.85, z);
+    add(cone, "filiforme");
+  }
+}
+
+[[-1.5, -2], [1.5, -1], [-1.2, 1], [1.8, 1.8]].forEach(([x, z]) => {
+  const fung = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 16), mat(0xea638c));
+  fung.position.set(x, 0.75, z);
+  fung.scale.set(1, 0.7, 1);
+  add(fung, "fungiforme");
+});
+
+[-1.2, 0, 1.2].forEach(x => {
+  const circ = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16), mat(0xd33f6a));
+  circ.position.set(x, 0.7, 3);
+  add(circ, "circunvalada");
+
+  const bot = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), mat(0xffeb3b));
+  bot.position.set(x + 0.45, 0.7, 3);
+  add(bot, "botao");
+});
+
+[-1, 1].forEach(x => {
+  const gland = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), mat(0xc47e99));
+  gland.position.set(x, -0.4, 3);
+  add(gland, "vonEbner");
+});
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+function showInfo(id) {
+  let s = structures[id];
+  if(!s) return;
+  document.getElementById("infoBadge").textContent = s.tipo.toUpperCase();
+  document.getElementById("infoTitle").textContent = s.nome;
+  document.getElementById("infoText").textContent = s.texto;
+  document.getElementById("info").classList.add("show");
+  document.querySelectorAll(".structure-btn").forEach(b => b.classList.toggle("active", b.dataset.id === id));
+}
+
+canvas.addEventListener("pointerdown", e => {
+  let r = canvas.getBoundingClientRect();
+  pointer.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  pointer.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  let hits = raycaster.intersectObjects(root.children, true);
+  if(hits.length) {
+    let o = hits[0].object;
+    while(o && !o.userData.structure) o = o.parent;
+    if(o?.userData.structure) showInfo(o.userData.structure);
+  }
+});
+
+const list = document.getElementById("structureList");
+Object.entries(structures).forEach(([id, s]) => {
+  let b = document.createElement("button");
+  b.className = "structure-btn";
+  b.dataset.id = id;
+  b.textContent = s.nome;
+  b.onclick = () => showInfo(id);
+  list.appendChild(b);
+});
+
+document.getElementById("resetBtn").onclick = () => {
+  camera.position.set(0, 6, 12);
+  controls.target.set(0,0,0);
+  controls.update();
+};
+document.getElementById("microBtn").onclick = () => document.getElementById("microscope").classList.add("show");
+document.getElementById("closeMicro").onclick = () => document.getElementById("microscope").classList.remove("show");
+
+loading.style.display = "none";
+
+function resize() {
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+}
+window.addEventListener("resize", resize);
+resize();
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
