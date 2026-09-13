@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Língua Histológica 3D — Modelo Interativo</title>
+<style>
+:root{
+  --bg:#090b12; --panel:rgba(14,18,29,.92); --line:#33405a;
+  --text:#f4f6fb; --muted:#aab3c5; --accent:#ff6687;
+}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:Arial,Helvetica,sans-serif;color:var(--text)}
+#app{position:fixed;inset:0}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+#loading{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#090b12;z-index:20;font-size:15px;color:#dce2ef;
+}
+#loading small{display:block;color:#8f9ab0;margin-top:8px;text-align:center}
+#topbar{
+ position:absolute;top:14px;left:14px;right:14px;z-index:5;
+ display:flex;align-items:center;justify-content:space-between;gap:12px;pointer-events:none
+}
+.brand{pointer-events:auto;background:rgba(9,12,20,.82);border:1px solid #2c3549;border-radius:14px;padding:11px 14px;backdrop-filter:blur(10px)}
+.brand b{font-size:16px}.brand span{display:block;color:#9da8bc;font-size:11px;margin-top:3px}
+.actions{display:flex;gap:8px;pointer-events:auto}
+button{
+ border:1px solid #34405a;background:rgba(18,23,36,.94);color:#f5f7fb;
+ border-radius:10px;padding:10px 12px;font-weight:600;cursor:pointer
+}
+button:active{transform:scale(.98)}
+#hint{
+ position:absolute;left:50%;top:82px;transform:translateX(-50%);
+ color:#c6cede;background:rgba(9,12,20,.72);border:1px solid #273148;
+ padding:7px 11px;border-radius:999px;font-size:11px;z-index:4;pointer-events:none;
+}
+#info{
+ position:absolute;right:16px;bottom:16px;width:min(370px,calc(100vw - 32px));
+ background:var(--panel);border:1px solid #303b53;border-radius:16px;padding:17px;
+ z-index:6;backdrop-filter:blur(14px);box-shadow:0 14px 45px rgba(0,0,0,.35);
+ transition:transform .25s ease,opacity .25s ease
+}
+#info.hidden{opacity:0;transform:translateY(18px);pointer-events:none}
+#info h2{font-size:19px;margin:0 0 7px}
+#info .tag{display:inline-block;color:#ffd4df;background:rgba(255,102,135,.12);border:1px solid rgba(255,102,135,.35);padding:4px 7px;border-radius:999px;font-size:10px;margin-bottom:10px}
+#info p{font-size:13px;line-height:1.48;color:#c9d0de;margin:7px 0 0}
+#legend{
+ position:absolute;left:16px;bottom:16px;width:205px;
+ background:rgba(10,14,23,.86);border:1px solid #2d3850;border-radius:14px;padding:12px;z-index:5
+}
+#legend b{font-size:12px}
+.leg{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:#b9c2d3}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+@media(max-width:700px){
+ #legend{display:none}
+ #hint{top:75px;font-size:10px}
+ #info{bottom:10px;right:10px;width:calc(100vw - 20px);padding:14px}
+ .actions button{font-size:11px;padding:9px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="loading"><div>Carregando modelo 3D…<small>Preparando a visualização interativa</small></div></div>
+
+  <div id="topbar">
+    <div class="brand"><b>LÍNGUA — CORTE HISTOLÓGICO 3D</b><span>Modelo anatômico interativo para estudo</span></div>
+    <div class="actions">
+      <button id="resetBtn">↺ Visão inicial</button>
+      <button id="labelsBtn">● Estruturas</button>
+    </div>
+  </div>
+
+  <div id="hint">Arraste para girar • Pinça/roda para aproximar • Toque em uma estrutura para estudar</div>
+
+  <div id="legend">
+    <b>Estruturas principais</b>
+    <div class="leg"><i class="dot" style="background:#d94b6b"></i>Epitélio</div>
+    <div class="leg"><i class="dot" style="background:#f1b0a7"></i>Tecido conjuntivo</div>
+    <div class="leg"><i class="dot" style="background:#e53c42"></i>Músculo estriado</div>
+    <div class="leg"><i class="dot" style="background:#6677cf"></i>Glândulas seromucosas</div>
+    <div class="leg"><i class="dot" style="background:#f1c1a4"></i>Botões gustativos</div>
+  </div>
+
+  <section id="info" class="hidden">
+    <div class="tag">ESTRUTURA SELECIONADA</div>
+    <h2 id="infoTitle">—</h2>
+    <p id="infoText">Clique em uma estrutura do modelo.</p>
+  </section>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x090b12);
+
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(7.2,5.4,8.8);
+
+const renderer = new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = .075;
+controls.minDistance = 4.0;
+controls.maxDistance = 16;
+controls.target.set(0,0.9,0);
+controls.maxPolarAngle = Math.PI*.89;
+
+scene.add(new THREE.HemisphereLight(0xffdce2,0x182033,2.1));
+const key = new THREE.DirectionalLight(0xffffff,3.1); key.position.set(5,9,7); scene.add(key);
+const fill = new THREE.DirectionalLight(0xff8eaa,1.25); fill.position.set(-7,4,2); scene.add(fill);
+const rim = new THREE.DirectionalLight(0x9fb7ff,1.1); rim.position.set(1,3,-8); scene.add(rim);
+
+const root = new THREE.Group();
+root.rotation.y = -0.18;
+scene.add(root);
+
+const clickable = [];
+const originalMaterials = new Map();
+const structureGroups = {};
+let labelsVisible = true;
+let selected = null;
+let anim = null;
+
+function mat(color, rough=.72, metal=0){
+  return new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});
+}
+function addMesh(geo, material, name, description, groupName=name){
+  const m = new THREE.Mesh(geo,material);
+  m.userData = {name,description,groupName};
+  originalMaterials.set(m,m.material);
+  clickable.push(m);
+  structureGroups[groupName] ||= [];
+  structureGroups[groupName].push(m);
+  return m;
+}
+
+// --- Base: histological tongue block, deliberately rounded/wedge-shaped ---
+const tissue = new THREE.Group();
+root.add(tissue);
+
+const muscleMat = mat(0xd83d45,.9);
+const connectiveMat = mat(0xf0aaa1,.88);
+const epiMat = mat(0xc84469,.76);
+const epiLightMat = mat(0xe45d79,.68);
+const glandMat = mat(0x5f70c7,.8);
+const tasteMat = mat(0xf0b99e,.7);
+const papillaMat = mat(0xd94f70,.62);
+
+const muscleGeo = new THREE.BoxGeometry(6.3,3.9,4.8,14,12,12);
+const muscle = addMesh(muscleGeo,muscleMat,'Músculo estriado esquelético',
+  'Forma a maior parte do corpo da língua. Suas fibras estão organizadas em diferentes direções, permitindo movimentos finos durante mastigação, deglutição e fala.','Músculo estriado esquelético');
+muscle.scale.set(1,.88,1);
+muscle.position.y=-1.15;
+tissue.add(muscle);
+
+// connective layer as slightly larger thin rounded block
+const connGeo = new THREE.BoxGeometry(6.5,1.55,4.95,12,5,10);
+const conn = addMesh(connGeo,connectiveMat,'Tecido conjuntivo (lâmina própria)',
+  'A lâmina própria fica logo abaixo do epitélio e contém vasos, fibras, nervos e glândulas. Ela dá suporte e nutrição aos tecidos superficiais.','Tecido conjuntivo');
+conn.position.y=1.52;
+tissue.add(conn);
+
+// epithelium
+const epGeo = new THREE.BoxGeometry(6.58,.75,5.0,14,4,12);
+const ep = addMesh(epGeo,epiMat,'Epitélio pavimentoso estratificado não queratinizado',
+  'Reveste a superfície lingual e funciona como barreira protetora. Nas regiões com papilas, o epitélio acompanha o relevo da superfície.','Epitélio');
+ep.position.y=2.66;
+tissue.add(ep);
+
+// subtle lamina-like bands to give histological depth
+for(let i=0;i<8;i++){
+  const g = new THREE.BoxGeometry(6.45,.055,4.86,10,1,10);
+  const m = addMesh(g, i%2 ? mat(0xe48e99,.9):mat(0xf4c0b5,.9),
+    'Camada da lâmina própria',
+    'Representação visual das camadas de tecido conjuntivo que sustentam o epitélio.','Tecido conjuntivo');
+  m.position.y=0.78+i*.095;
+  tissue.add(m);
+}
+
+// --- muscle fiber bundles crossing in multiple directions ---
+function capsuleBundle(x,z,rotY,scaleX,scaleZ){
+  const geo = new THREE.CapsuleGeometry(.22,1.35,5,10);
+  const m = addMesh(geo,muscleMat,'Fibras de músculo estriado',
+    'As fibras musculares da língua se cruzam em diferentes planos. Essa organização permite movimentos complexos e precisos.','Músculo estriado esquelético');
+  m.position.set(x,-1.2,z);
+  m.rotation.set(0,rotY,Math.PI/2);
+  m.scale.set(scaleX,scaleZ,1);
+  tissue.add(m);
+}
+for(let z=-1.7;z<=1.7;z+=.85){
+  capsuleBundle(-1.9,z,0,.95,1);
+  capsuleBundle(-.6,z,Math.PI*.18,.9,1);
+  capsuleBundle(.8,z,Math.PI*.82,.92,1);
+  capsuleBundle(2.0,z,Math.PI*.35,.88,1);
+}
+
+// --- seromucous glands embedded in connective tissue ---
+function glandCluster(x,y,z,s=1){
+  const group=new THREE.Group();
+  for(let i=0;i<7;i++){
+    const g=new THREE.SphereGeometry(.25*s,12,10);
+    const m=addMesh(g,glandMat,'Glândulas seromucosas',
+      'Produzem secreções que ajudam a umedecer a cavidade oral. Na região posterior da língua, glândulas associadas às papilas também contribuem para a limpeza dos sulcos gustativos.','Glândulas seromucosas');
+    m.position.set(x+(Math.random()-.5)*.65*s,y+(Math.random()-.5)*.45*s,z+(Math.random()-.5)*.65*s);
+    group.add(m);
+  }
+  tissue.add(group);
+}
+for(const p of [[-2.2,1.0,-1.1],[-.7,1.05,-.9],[.9,1.0,-1.0],[2.0,1.0,-.8],[-2.0,1.0,1.1],[.4,1.0,1.1],[2.1,1.0,1.0]]) glandCluster(...p,.95);
+
+// --- papillae on the dorsal surface ---
+function conePapilla(x,z,h=.72,r=.18,kind='Papilas filiformes'){
+  const geo=new THREE.ConeGeometry(r,h,12,2);
+  const m=addMesh(geo,papillaMat,kind,
+    kind==='Papilas filiformes'
+      ? 'São numerosas e têm função principalmente mecânica. Ajudam a manipular o alimento e dão à superfície da língua sua textura característica.'
+      : 'Possuem formato mais arredondado e podem conter botões gustativos. São mais volumosas que as filiformes.',
+    kind);
+  m.position.set(x,3.42+h*.25,z);
+  tissue.add(m);
+  return m;
+}
+
+// many filiform papillae, organized rather than random
+for(let x=-2.8;x<=2.8;x+=.46){
+  for(let z=-2.0;z<=2.0;z+=.48){
+    const edge=Math.abs(z)>1.55 || Math.abs(x)>2.45;
+    const h=.52+(Math.sin(x*3+z*2)+1)*.13;
+    conePapilla(x,z,edge?h*.85:h,.13+(Math.cos(z*3)*.025),'Papilas filiformes');
+  }
+}
+
+// fungiform papillae
+for(const [x,z] of [[-2.25,-1.45],[-1.45,-.8],[-.65,.1],[.35,-.75],[1.35,.35],[2.15,-.65],[-2.35,.55],[1.95,1.05]]){
+  const base=new THREE.CylinderGeometry(.30,.24,.20,20);
+  const m=addMesh(base,papillaMat,'Papilas fungiformes',
+    'Papilas maiores e arredondadas, distribuídas entre as filiformes. Podem apresentar botões gustativos e participam da percepção do paladar.','Papilas fungiformes');
+  m.position.set(x,3.28,z); tissue.add(m);
+  const cap=new THREE.SphereGeometry(.34,20,12);
+  const c=addMesh(cap,epiLightMat,'Papilas fungiformes',
+    'Papilas maiores e arredondadas, distribuídas entre as filiformes. Podem apresentar botões gustativos e participam da percepção do paladar.','Papilas fungiformes');
+  c.scale.y=.42;c.position.set(x,3.45,z); tissue.add(c);
+}
+
+// circumvallate papilla: large ring and central raised area
+const cvGroup=new THREE.Group();
+const cvRingGeo=new THREE.TorusGeometry(1.15,.25,18,64);
+const cvRing=addMesh(cvRingGeo,papillaMat,'Papila circunvalada',
+  'Papila grande circundada por um sulco. Nas paredes laterais encontram-se numerosos botões gustativos. Glândulas associadas ajudam a lavar o sulco.','Papila circunvalada');
+cvRing.rotation.x=Math.PI/2;cvRing.position.set(1.25,3.43,.25);cvGroup.add(cvRing);
+
+const cvCenterGeo=new THREE.CylinderGeometry(.88,.96,.48,48);
+const cvCenter=addMesh(cvCenterGeo,epiLightMat,'Papila circunvalada',
+  'Papila grande circundada por um sulco. Nas paredes laterais encontram-se numerosos botões gustativos. Glândulas associadas ajudam a lavar o sulco.','Papila circunvalada');
+cvCenter.position.set(1.25,3.38,.25);cvGroup.add(cvCenter);
+tissue.add(cvGroup);
+
+// taste buds around inner wall of circumvallate papilla
+for(let i=0;i<24;i++){
+  const a=i/24*Math.PI*2;
+  const x=1.25+Math.cos(a)*1.03;
+  const z=.25+Math.sin(a)*1.03;
+  const geo=new THREE.SphereGeometry(.075,.14*0+10,8);
+  const m=addMesh(geo,tasteMat,'Botões gustativos',
+    'Estruturas sensoriais especializadas em células receptoras do paladar. Na papila circunvalada, ficam principalmente nas paredes laterais voltadas para o sulco.','Botões gustativos');
+  m.scale.set(1.2,.7,.55);
+  m.position.set(x,3.22,z);
+  m.lookAt(1.25,3.22,.25);
+  tissue.add(m);
+}
+
+// small taste buds on fungiform papillae
+for(const [x,z] of [[-2.25,-1.45],[-1.45,-.8],[-.65,.1],[.35,-.75],[1.35,.35],[2.15,-.65]]){
+  for(let k=0;k<3;k++){
+    const a=k/3*Math.PI*2;
+    const g=new THREE.SphereGeometry(.055,9,7);
+    const m=addMesh(g,tasteMat,'Botões gustativos',
+      'Pequenas estruturas sensoriais responsáveis pela recepção dos estímulos gustativos.','Botões gustativos');
+    m.position.set(x+Math.cos(a)*.22,3.55,z+Math.sin(a)*.22);
+    tissue.add(m);
+  }
+}
+
+// small vascular dots
+const vesselMat=mat(0xb92f43,.7);
+for(let i=0;i<28;i++){
+  const g=new THREE.SphereGeometry(.06+Math.random()*.035,8,7);
+  const m=addMesh(g,vesselMat,'Vasos sanguíneos',
+    'Vasos presentes no tecido conjuntivo levam oxigênio e nutrientes e participam da drenagem dos tecidos.','Vasos sanguíneos');
+  m.position.set((Math.random()-.5)*5.7,.95+(Math.random()-.5)*1.0,(Math.random()-.5)*4.1);
+  tissue.add(m);
+}
+
+// floor
+const floor=new THREE.Mesh(
+  new THREE.CircleGeometry(13,64),
+  new THREE.MeshStandardMaterial({color:0x0b0f18,roughness:1})
+);
+floor.rotation.x=-Math.PI/2; floor.position.y=-3.15; scene.add(floor);
+
+// labels made as 3D sprite-like canvas textures
+function makeLabel(text,color='#ffffff'){
+  const c=document.createElement('canvas'); c.width=512;c.height=96;
+  const ctx=c.getContext('2d');ctx.font='bold 30px Arial';ctx.fillStyle=color;
+  ctx.fillText(text,12,54);
+  const tex=new THREE.CanvasTexture(c);
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
+  spr.scale.set(2.5,.47,1); return spr;
+}
+const labelData=[
+ ['EPITÉLIO',[-3.9,2.8,0], '#ff93ad'],
+ ['LÂMINA PRÓPRIA',[-4.0,1.35,0], '#f2c0b7'],
+ ['MÚSCULO',[-3.7,-1.5,0], '#ff777e'],
+ ['GLÂNDULAS',[3.5,1.15,-1.1], '#9eafff'],
+ ['PAPILA CIRCUNVALADA',[3.7,3.9,.3], '#ff93ad'],
+ ['BOTÕES GUSTATIVOS',[3.9,3.15,1.3], '#ffd2bd']
+];
+const labelGroup=new THREE.Group();root.add(labelGroup);
+for(const [txt,pos,col] of labelData){const s=makeLabel(txt,col);s.position.set(...pos);labelGroup.add(s)}
+labelGroup.visible=labelsVisible;
+
+// selection / focus
+const raycaster=new THREE.Raycaster();
+const pointer=new THREE.Vector2();
+const info=document.getElementById('info');
+const infoTitle=document.getElementById('infoTitle');
+const infoText=document.getElementById('infoText');
+
+function clearHighlight(){
+  if(selected){
+    selected.material=originalMaterials.get(selected);
+    selected.scale.multiplyScalar(1/1.06);
+  }
+}
+function showInfo(obj){
+  clearHighlight();
+  selected=obj;
+  if(!selected)return;
+  selected.material=selected.material.clone();
+  selected.material.emissive=new THREE.Color(0x551522);
+  selected.material.emissiveIntensity=.7;
+  selected.scale.multiplyScalar(1.06);
+  infoTitle.textContent=obj.userData.name;
+  infoText.textContent=obj.userData.description;
+  info.classList.remove('hidden');
+
+  // Focus camera on object with a safe, smooth distance.
+  const world=new THREE.Vector3();obj.getWorldPosition(world);
+  const dir=new THREE.Vector3().subVectors(camera.position,controls.target).normalize();
+  const distance = obj.userData.name==='Músculo estriado esquelético' ? 5.8 :
+                   obj.userData.name==='Epitélio pavimentoso estratificado não queratinizado' ? 4.6 : 3.5;
+  const targetPos=world.clone().add(dir.multiplyScalar(distance));
+  const startPos=camera.position.clone(), startTarget=controls.target.clone();
+  const endTarget=world.clone();
+  anim={t:0,dur:650,startPos,startTarget,endPos:targetPos,endTarget};
+}
+function pointerSelect(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  pointer.x=((e.clientX-r.left)/r.width)*2-1;
+  pointer.y=-((e.clientY-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  const hits=raycaster.intersectObjects(clickable,false);
+  if(hits.length)showInfo(hits[0].object);
+}
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(Math.hypot(e.clientX-(renderer.domElement._sx||e.clientX),e.clientY-(renderer.domElement._sy||e.clientY))<7) pointerSelect(e);
+});
+renderer.domElement.addEventListener('pointerdown',e=>{renderer.domElement._sx=e.clientX;renderer.domElement._sy=e.clientY});
+
+// buttons
+document.getElementById('resetBtn').onclick=()=>{
+  clearHighlight();selected=null;info.classList.add('hidden');
+  anim={t:0,dur:600,startPos:camera.position.clone(),startTarget:controls.target.clone(),
+        endPos:new THREE.Vector3(7.2,5.4,8.8),endTarget:new THREE.Vector3(0,.9,0)};
+};
+document.getElementById('labelsBtn').onclick=()=>{
+ labelsVisible=!labelsVisible;labelGroup.visible=labelsVisible;
+ document.getElementById('labelsBtn').textContent=labelsVisible?'● Estruturas':'○ Estruturas';
+};
+
+function smooth(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2}
+function animate(){
+ requestAnimationFrame(animate);
+ if(anim){
+   anim.t=Math.min(1,anim.t+16.7/anim.dur);
+   const k=smooth(anim.t);
+   camera.position.lerpVectors(anim.startPos,anim.endPos,k);
+   controls.target.lerpVectors(anim.startTarget,anim.endTarget,k);
+   if(anim.t>=1)anim=null;
+ }
+ controls.update();
+ renderer.render(scene,camera);
+}
+addEventListener('resize',()=>{
+ camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+document.getElementById('loading').remove();
+animate();
+</script>
+</body>
+</html>
