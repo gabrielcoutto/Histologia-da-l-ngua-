@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Língua Histológica 3D — Modelo Interativo</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial,sans-serif;background:#090b12;color:#fff}
+#app{width:100vw;height:100vh;position:relative}
+#hud{position:absolute;z-index:5;left:18px;top:18px;background:rgba(12,15,25,.82);backdrop-filter:blur(12px);padding:14px 16px;border:1px solid rgba(255,255,255,.12);border-radius:16px;max-width:330px}
+#hud h1{font-size:18px;margin:0 0 5px}
+#hud p{font-size:12px;opacity:.72;margin:0;line-height:1.4}
+#info{position:absolute;z-index:6;right:18px;top:18px;width:min(360px,calc(100vw - 36px));background:rgba(12,15,25,.9);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.13);border-radius:18px;padding:18px;display:none;box-shadow:0 18px 50px rgba(0,0,0,.35)}
+#info .tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.6}
+#info h2{margin:5px 0 9px;font-size:22px}
+#info p{font-size:14px;line-height:1.55;margin:0 0 10px;color:#e9eaf0}
+#info button,#reset{border:0;border-radius:10px;padding:9px 12px;background:#fff;color:#111;font-weight:700;cursor:pointer}
+#reset{position:absolute;z-index:5;right:18px;bottom:18px}
+#hint{position:absolute;z-index:5;left:50%;bottom:18px;transform:translateX(-50%);font-size:12px;opacity:.55;background:rgba(0,0,0,.3);padding:8px 12px;border-radius:99px}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <h1>Língua Histológica 3D</h1>
+    <p>Arraste para girar • pinça/scroll para aproximar • clique em uma estrutura para destacar e aproximar.</p>
+  </div>
+  <div id="info">
+    <div class="tag">Histologia</div>
+    <h2 id="infoTitle"></h2>
+    <p id="infoText"></p>
+    <button id="closeInfo">Fechar</button>
+  </div>
+  <button id="reset">↺ Visão geral</button>
+  <div id="hint">Modelo reconstruído a partir das referências enviadas</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x090b12);
+
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,100);
+camera.position.set(0,5.8,10.8);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.getElementById('app').appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffd9e5,0x263040,2.0));
+const key=new THREE.DirectionalLight(0xffffff,3.2);
+key.position.set(4,9,7); key.castShadow=true; scene.add(key);
+const fill=new THREE.DirectionalLight(0x9bbcff,1.4);
+fill.position.set(-7,4,2); scene.add(fill);
+
+const root=new THREE.Group(); root.rotation.x=-0.10; scene.add(root);
+
+const materials={
+ muscle:new THREE.MeshStandardMaterial({color:0xa72f4c,roughness:.72}),
+ muscle2:new THREE.MeshStandardMaterial({color:0xc44761,roughness:.68}),
+ ct:new THREE.MeshStandardMaterial({color:0xf2b2a9,roughness:.75}),
+ vessel:new THREE.MeshStandardMaterial({color:0x8b3151,roughness:.55}),
+ epithelium:new THREE.MeshStandardMaterial({color:0x6e245d,roughness:.62}),
+ surface:new THREE.MeshStandardMaterial({color:0xd65b91,roughness:.7}),
+ papilla:new THREE.MeshStandardMaterial({color:0xed729f,roughness:.64}),
+ taste:new THREE.MeshStandardMaterial({color:0xf6b6d0,roughness:.5}),
+ gland:new THREE.MeshStandardMaterial({color:0x4967a4,roughness:.55}),
+ nerve:new THREE.MeshStandardMaterial({color:0x5869c9,roughness:.5}),
+ white:new THREE.MeshStandardMaterial({color:0xf6dce7,roughness:.55})
+};
+
+function roundedBox(w,h,d,r,mat){
+  const s=new THREE.Shape();
+  const x=-w/2,y=-h/2;
+  s.moveTo(x+r,y); s.lineTo(x+w-r,y); s.quadraticCurveTo(x+w,y,x+w,y+r);
+  s.lineTo(x+w,y+h-r); s.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  s.lineTo(x+r,y+h); s.quadraticCurveTo(x,y+h,x,y+h-r);
+  s.lineTo(x,y+r); s.quadraticCurveTo(x,y,x+r,y);
+  const g=new THREE.ExtrudeGeometry(s,{depth:d,bevelEnabled:true,bevelSegments:2,bevelSize:.05,bevelThickness:.05});
+  g.center();
+  const m=new THREE.Mesh(g,mat); m.castShadow=true;m.receiveShadow=true;return m;
+}
+
+const W=7.6, H=4.8;
+const muscle=roundedBox(W,2.55,4.9,.25,materials.muscle); muscle.position.y=-1.15; root.add(muscle);
+const muscleTop=roundedBox(W-.25,.85,4.65,.2,materials.muscle2); muscleTop.position.y=.42; root.add(muscleTop);
+const ct=roundedBox(W-.18,1.0,4.55,.18,materials.ct); ct.position.y=1.18; root.add(ct);
+const epi=roundedBox(W-.12,.58,4.45,.14,materials.epithelium); epi.position.y=1.78; root.add(epi);
+const surf=roundedBox(W-.05,.28,4.36,.1,materials.surface); surf.position.y=2.18; root.add(surf);
+
+function addNamed(mesh,name,text,focus){
+  mesh.userData={name,text,focus};
+  mesh.castShadow=true;mesh.receiveShadow=true;root.add(mesh);return mesh;
+}
+function ellipsoid(x,y,z,sx,sy,sz,mat,name,text,focus){
+  const g=new THREE.SphereGeometry(1,24,16);
+  const m=new THREE.Mesh(g,mat);m.position.set(x,y,z);m.scale.set(sx,sy,sz);
+  return addNamed(m,name,text,focus);
+}
+
+// papillae
+const papillae=[];
+function pap(x,z,type){
+  let m;
+  if(type==='filiform'){
+    m=new THREE.Mesh(new THREE.ConeGeometry(.10,.55,10),materials.papilla);
+    m.position.set(x,2.55,z); m.rotation.x=(Math.random()-.5)*.25; m.rotation.z=(Math.random()-.5)*.18;
+  }else if(type==='fungiform'){
+    m=new THREE.Mesh(new THREE.SphereGeometry(.25,18,12),materials.papilla);
+    m.scale.y=.65; m.position.set(x,2.43,z);
+  }else{
+    m=new THREE.Mesh(new THREE.TorusGeometry(.52,.16,14,36),materials.papilla);
+    m.rotation.x=Math.PI/2; m.position.set(x,2.42,z);
+  }
+  m.userData={name:type==='filiform'?'Papila filiforme':type==='fungiform'?'Papila fungiforme':'Papila circunvalada',
+    text:type==='filiform'?'Papilas filiformes: numerosas, finas e queratinizadas. Atuam principalmente na função mecânica e não possuem botões gustativos típicos.':
+    type==='fungiform'?'Papilas fungiformes: mais arredondadas, com tecido conjuntivo vascularizado e botões gustativos principalmente na superfície dorsal.':
+    'Papila circunvalada: grande papila rodeada por um sulco profundo. Os botões gustativos ficam principalmente nas paredes laterais e há glândulas serosas associadas.',
+    focus:m.position.clone()};
+  m.castShadow=true;root.add(m);papillae.push(m);
+}
+// regular surface
+for(let i=0;i<75;i++){
+  const x=(Math.random()-.5)*7.0, z=(Math.random()-.5)*3.75;
+  pap(x,z,'filiform');
+}
+for(const [x,z] of [[-2.2,-1.1],[-1.3,1.0],[1.6,-.9],[2.2,1.2],[-.2,.4]]) pap(x,z,'fungiform');
+pap(0,0,'circunvalada');
+
+// taste buds on trench walls
+for(let i=0;i<14;i++){
+  const a=(i/14)*Math.PI*2;
+  const r=.57;
+  const x=Math.cos(a)*r, z=Math.sin(a)*r;
+  const b=ellipsoid(x,2.38,z,.10,.20,.06,materials.taste,'Botão gustativo',
+    'Botões gustativos são estruturas sensoriais intraepiteliais formadas por células gustativas e células de suporte. Participam da percepção dos sabores.',
+    new THREE.Vector3(x,2.55,z));
+  b.rotation.y=-a;
+}
+
+// glands in connective tissue
+for(let i=0;i<12;i++){
+  const x=(Math.random()-.5)*6.4,z=(Math.random()-.5)*3.5;
+  const g=ellipsoid(x,1.35,z,.25,.18,.30,materials.gland,'Glândula salivar menor',
+    'Glândulas salivares menores ficam associadas à lâmina própria/submucosa em várias regiões. Produzem secreções que ajudam a manter e proteger a mucosa.',
+    new THREE.Vector3(x,1.45,z));
+}
+
+// vessels
+for(let i=0;i<8;i++){
+  const x=(Math.random()-.5)*6.2,z=(Math.random()-.5)*3.5;
+  const v=ellipsoid(x,1.0,z,.16,.09,.32,materials.vessel,'Vaso sanguíneo',
+    'Vasos sanguíneos percorrem o tecido conjuntivo e fornecem oxigênio e nutrientes aos tecidos. A intensa vascularização também contribui para a aparência avermelhada da língua.',
+    new THREE.Vector3(x,1.1,z));
+}
+
+// nerves
+for(let i=0;i<7;i++){
+  const x=(Math.random()-.5)*6,z=(Math.random()-.5)*3.4;
+  const n=ellipsoid(x,.72,z,.18,.07,.42,materials.nerve,'Nervo',
+    'Fibras nervosas presentes no tecido conjuntivo participam da sensibilidade geral e da condução dos estímulos associados à gustação.',
+    new THREE.Vector3(x,.8,z));
+}
+
+// muscle fiber bands
+for(let i=0;i<26;i++){
+  const x=-3.2+i*.25;
+  const g=new THREE.CapsuleGeometry(.09,3.9,4,8);
+  const m=new THREE.Mesh(g,materials.white);
+  m.position.set(x,-1.15,(i%3-1)*.65);
+  m.rotation.z=(i%2?-.20:.20);
+  m.scale.z=.65;
+  m.userData={name:'Músculo estriado esquelético',text:'A língua é formada predominantemente por músculo estriado esquelético organizado em diferentes direções. Essa disposição permite movimentos muito precisos durante fala, mastigação e deglutição.',focus:new THREE.Vector3(x,-.5,m.position.z)};
+  m.castShadow=true;root.add(m);
+}
+
+// labels / invisible broad click regions
+const hitTargets=[];
+function target(name,text,pos,size){
+  const g=new THREE.SphereGeometry(size,12,8);
+  const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({transparent:true,opacity:0}));
+  m.position.copy(pos);m.userData={name,text,focus:pos.clone()};root.add(m);hitTargets.push(m);return m;
+}
+target('Epitélio estratificado pavimentoso', 'O dorso da língua é revestido por epitélio estratificado pavimentoso. Dependendo da região, pode apresentar maior ou menor queratinização, relacionada à função mecânica.',new THREE.Vector3(-3,2.0,1.8),1.0);
+target('Tecido conjuntivo', 'O tecido conjuntivo abaixo do epitélio contém fibras, vasos, nervos e glândulas. As papilas linguais possuem um eixo de tecido conjuntivo que sustenta o epitélio.',new THREE.Vector3(3,1.2,-1.6),1.0);
+target('Músculo da língua', 'A maior parte do volume da língua é constituída por músculo estriado esquelético. Os feixes se cruzam em diferentes planos e permitem grande mobilidade.',new THREE.Vector3(2,-1.0,0),1.2);
+
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.ShadowMaterial({opacity:.25}));
+floor.rotation.x=-Math.PI/2;floor.position.y=-2.55;floor.receiveShadow=true;scene.add(floor);
+
+// interaction
+let dragging=false,lastX=0,lastY=0;
+let targetRotY=0,targetRotX=-.10,zoom=10.8;
+const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();
+const clickable=()=>root.children.filter(o=>o.isMesh && o.userData && o.userData.name);
+
+renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY});
+window.addEventListener('pointerup',()=>dragging=false);
+window.addEventListener('pointermove',e=>{
+ if(!dragging)return;
+ targetRotY+=(e.clientX-lastX)*.008;
+ targetRotX+=(e.clientY-lastY)*.005;
+ targetRotX=Math.max(-.9,Math.min(.6,targetRotX));
+ lastX=e.clientX;lastY=e.clientY;
+});
+renderer.domElement.addEventListener('wheel',e=>{
+ e.preventDefault();zoom+=e.deltaY*.008;zoom=Math.max(5.2,Math.min(16,zoom));
+},{passive:false});
+
+function show(obj){
+ document.getElementById('infoTitle').textContent=obj.userData.name;
+ document.getElementById('infoText').textContent=obj.userData.text;
+ document.getElementById('info').style.display='block';
+ const f=obj.userData.focus||obj.position.clone();
+ // focus by rotating/zooming camera target
+ focusPoint=f.clone();
+ focusActive=true;
+}
+let focusPoint=new THREE.Vector3(0,0,0),focusActive=false;
+let baseLook=new THREE.Vector3(0,0,0);
+
+renderer.domElement.addEventListener('click',e=>{
+ if(Math.abs(e.clientX-lastX)>5 || Math.abs(e.clientY-lastY)>5)return;
+ mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
+ ray.setFromCamera(mouse,camera);
+ const hits=ray.intersectObjects(clickable(),false);
+ if(hits.length) show(hits[0].object);
+});
+document.getElementById('closeInfo').onclick=()=>{document.getElementById('info').style.display='none';focusActive=false;zoom=10.8};
+document.getElementById('reset').onclick=()=>{
+ targetRotY=0;targetRotX=-.10;zoom=10.8;focusActive=false;
+ document.getElementById('info').style.display='none';
+};
+
+function animate(){
+ requestAnimationFrame(animate);
+ root.rotation.y+=(targetRotY-root.rotation.y)*.08;
+ root.rotation.x+=(targetRotX-root.rotation.x)*.08;
+ if(focusActive){
+   const world=root.localToWorld(focusPoint.clone());
+   const dir=world.clone().sub(camera.position).normalize();
+   const desired=world.clone().add(dir.multiplyScalar(-4.2));
+   camera.position.lerp(desired,.055);
+   camera.lookAt(world);
+ }else{
+   camera.position.lerp(new THREE.Vector3(0,5.8,zoom),.06);
+   camera.lookAt(0,0,0);
+ }
+ renderer.render(scene,camera);
+}
+animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body>
+</html>
